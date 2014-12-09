@@ -234,6 +234,39 @@ inline int FromUTF8(const char **in) {
   return ucc;
 }
 
+static void Error(const std::string &msg) {
+  throw msg;
+}
+
+// Ensure that integer values we parse fit inside the declared integer type.
+static void CheckBitsFit(int64_t val, size_t bits) {
+  auto mask = (1ll << bits) - 1;  // Bits we allow to be used.
+  if (bits < 64 &&
+    (val & ~mask) != 0 &&  // Positive or unsigned.
+    (val | mask) != -1)   // Negative.
+    Error("constant does not fit in a " + NumToString(bits) + "-bit field");
+}
+
+// atot: templated version of atoi/atof: convert a string to an instance of T.
+template<typename T> inline T atot(const char *s) {
+  auto val = StringToInt(s);
+  CheckBitsFit(val, sizeof(T) * 8);
+  return (T)val;
+}
+template<> inline bool atot<bool>(const char *s) {
+  return 0 != atoi(s);
+}
+template<> inline float atot<float>(const char *s) {
+  return static_cast<float>(strtod(s, nullptr));
+}
+template<> inline double atot<double>(const char *s) {
+  return strtod(s, nullptr);
+}
+
+template<> inline Offset<void> atot<Offset<void>>(const char *s) {
+  return Offset<void>(atoi(s));
+}
+
 }  // namespace flatbuffers
 
 #endif  // FLATBUFFERS_UTIL_H_

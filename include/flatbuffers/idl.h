@@ -442,6 +442,109 @@ extern bool GenerateFBS(const Parser &parser,
                         const std::string &file_name,
                         const GeneratorOptions &opts);
 
+// This class can be used to read flatbuffer data dynamically.
+// Given the field name user can get the field type and value.
+class DynamicTableReader {
+public:
+  DynamicTableReader()
+    : root_struct_(nullptr), child_structs_(nullptr), table_(nullptr) {
+  }
+
+  DynamicTableReader(Table* table, StructDef* rootStruct,
+    SymbolTable<StructDef>* childStructs)
+    : root_struct_(rootStruct), child_structs_(childStructs), table_(table) {
+  }
+
+  const FieldDef* GetFieldDef(const std::string& fieldName) {
+    return root_struct_->fields.Lookup(fieldName);
+  }
+
+  const SymbolTable<FieldDef>* GetFields() {
+    return &root_struct_->fields;
+  }
+
+  const StructDef* GetStructDef() {
+    return root_struct_;
+  }
+
+  template <typename T> T GetScalarValueAs(const FieldDef* field_def) {
+    assert(IsScalar(field_def->value.type.base_type));
+    return table_->GetField<T>(field_def->value.offset,
+      atot<T>(field_def->value.constant.c_str()));
+  }
+
+  const char* GetStringValue(const FieldDef* field_def) {
+    assert(field_def->value.type.base_type == BaseType::BASE_TYPE_STRING);
+    auto str = table_->GetPointer<const flatbuffers::String*>(field_def->value.offset);
+    return str ? str->c_str() : nullptr;
+  }
+
+  void GetTableValue(const FieldDef* field_def, DynamicTableReader& dynamic_table_reader) {
+    assert(field_def->value.type.base_type == BaseType::BASE_TYPE_STRUCT);
+    auto table = const_cast<Table*>(table_->GetPointer<const Table*>(field_def->value.offset));
+    auto rootStruct = child_structs_->Lookup(field_def->value.type.struct_def->name);
+    dynamic_table_reader.SetTable(table);
+    dynamic_table_reader.SetRootStruct(rootStruct);
+    dynamic_table_reader.SetChildStructs(child_structs_);
+  }
+
+  uoffset_t GetVectorLength(const FieldDef* vector_field_def) {
+    assert(vector_field_def->value.type.base_type == BaseType::BASE_TYPE_VECTOR);
+
+    switch (vector_field_def->value.type.base_type) {
+#define FLATBUFFERS_TD(ENUM, IDLTYPE, CTYPE, JTYPE, GTYPE, NTYPE) \
+      case BASE_TYPE_ ## ENUM: { \
+        auto v = table_->GetPointer<const Vector<CTYPE> *>(vector_field_def->value.offset); \
+        if(v != nullptr) \
+          return v->size(); \
+                else \
+          return 0; \
+        break; \
+          }
+      FLATBUFFERS_GEN_TYPES(FLATBUFFERS_TD)
+#undef FLATBUFFERS_TD
+    }
+
+    return 0;
+  }
+
+  template <typename T> T GetVectorScalarValue(const FieldDef* vector_field_def, uoffset_t index) {
+    assert(vector_field_def->value.type.base_type == BaseType::BASE_TYPE_VECTOR);
+    assert(IsScalar(vector_field_def->value.type.element));
+    auto v = table_->GetPointer<const Vector<T> *>(vector_field_def->value.offset);
+    return v->Get(index);
+  }
+
+  const char* GetVectorStringValue(const FieldDef* vector_field_def, uoffset_t index) {
+    assert(vector_field_def->value.type.base_type == BaseType::BASE_TYPE_VECTOR);
+    assert(vector_field_def->value.type.element == BaseType::BASE_TYPE_STRING);
+    auto v = table_->GetPointer<const Vector<Offset<String>>*>(vector_field_def->value.offset);
+    auto str = v->Get(index);
+    return str ? str->c_str() : nullptr;
+  }
+
+  void GetVectorTableValue(const FieldDef* vector_field_def, uoffset_t index,
+    DynamicTableReader& dynamic_table_reader) {
+    assert(vector_field_def->value.type.base_type == BaseType::BASE_TYPE_VECTOR);
+    assert(vector_field_def->value.type.element == BaseType::BASE_TYPE_STRUCT);
+    auto v = table_->GetPointer<const Vector<Offset<Table>>*>(vector_field_def->value.offset);
+    auto table = v->Get(index);
+    auto rootStruct = child_structs_->Lookup(vector_field_def->value.type.struct_def->name);
+    dynamic_table_reader.SetTable(const_cast<Table*>(table));
+    dynamic_table_reader.SetRootStruct(rootStruct);
+    dynamic_table_reader.SetChildStructs(child_structs_);
+  }
+
+  void SetRootStruct(StructDef* val) { root_struct_ = val; }
+  void SetChildStructs(SymbolTable<StructDef>* val) { child_structs_ = val; }
+  void SetTable(Table* val) { table_ = val; }
+
+private:
+  StructDef* root_struct_;
+  SymbolTable<StructDef>* child_structs_;
+  Table* table_;
+};
+
 }  // namespace flatbuffers
 
 #endif  // FLATBUFFERS_IDL_H_

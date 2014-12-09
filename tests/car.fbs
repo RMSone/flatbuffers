@@ -1,0 +1,81 @@
+namespace dynamic_api_samples;
+
+enum Color:byte {
+	WHITE = 0,
+	YELLOW = 1,
+	ORANGE = 2,
+	PURPLE = 3,
+	BLUE = 4,
+	GREEN = 5,
+	BROWN = 6,
+	SILVER = 7,
+	BLACK = 8
+}
+
+enum EngineCylinder:byte {
+	THREE_CYLINDERS = 0,
+	FOUR_CYLINDERS = 1,
+	FIVE_CYLINDERS = 2,
+	SIX_CYLINDERS = 3,
+	EIGHT_CYLINDERS = 4
+}
+
+enum EngineCylinderOrientation:byte {
+	INLINE = 0,
+	V_SERIES = 1,
+	OPPOSING = 2	
+}
+
+enum GasType:byte {
+	E85 = 0,
+	OCTANE_STANDARD = 1,
+	OCTANE_MIDGRADE = 2,
+	OCTANE_PREMIUM = 3,
+	DIESEL = 4,
+	COMPRESSED_NATURAL_GAS = 5
+}
+
+table Engine {
+	EngineId:uint;
+	Manufacturer:string;
+	Size:int;
+	EngineCylinderOrientationVal:EngineCylinderOrientation;
+	EngineCylinderVal:EngineCylinder;
+	GasTypeVal:GasType;
+	IsFourStroke:bool;
+}
+
+table Dealership {
+	DealershipId:uint;
+	DealerName:string;
+	SalesPeople:[string];
+	HoursOfOperation:[int];
+	AddressLine1:string;
+	AddressLine2:string;
+	AddressCity:string;
+	AddressState:string;
+	AddressZipcode:string;
+	AddressZip4:string;
+	DealershipPhone:string;
+}
+
+table Car {
+
+	CarId:uint;
+	Make:string;
+	Model:string;
+	YearBuilt:int;
+	WarrantyLength:int;
+	Dealerships:[Dealership];
+	CarColor:Color = SILVER;
+	CarEngine:Engine;
+	TankSizeGallons:float;
+	OdometerAtTimeOfSale:double;
+	RecommendedServiceIntervals:[double];
+
+}
+
+root_type Car;
+
+file_identifier "_CAR";
+file_extension "dat";

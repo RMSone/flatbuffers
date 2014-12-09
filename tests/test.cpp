@@ -19,10 +19,13 @@
 #include "flatbuffers/util.h"
 
 #include "monster_test_generated.h"
+#include "car_generated.h"
 
 #include <random>
+#include <iostream>
 
 using namespace MyGame::Example;
+using namespace dynamic_api_samples;
 
 #ifdef __ANDROID__
   #include <android/log.h>
@@ -563,6 +566,322 @@ void UnicodeTest() {
                      "\\u5225\\u30B5\\u30A4\\u30C8\\x01\\x80\"}", true);
 }
 
+std::string BuildCarFlatbuffer() {
+  // First build engine
+  flatbuffers::FlatBufferBuilder fbb;
+  auto manufacturer = fbb.CreateString("BMW");
+  EngineBuilder engBuilder(fbb);
+  engBuilder.add_EngineCylinderOrientationVal(EngineCylinderOrientation::EngineCylinderOrientation_V_SERIES);
+  engBuilder.add_EngineCylinderVal(EngineCylinder::EngineCylinder_EIGHT_CYLINDERS);
+  engBuilder.add_EngineId(1);
+  engBuilder.add_GasTypeVal(GasType::GasType_OCTANE_PREMIUM);
+  engBuilder.add_IsFourStroke(0);
+
+  engBuilder.add_Manufacturer(manufacturer);
+  engBuilder.add_Size(750);
+  auto engine = engBuilder.Finish();
+
+  std::vector<flatbuffers::Offset<Dealership>> dealershipVector;
+  // Build dealerships
+  for (int32_t i = 0; i < 3; i++) {
+
+    auto city = fbb.CreateString("Fremont");
+    auto l1 = fbb.CreateString("AutoMall");
+    auto l2 = fbb.CreateString("Parkway");
+    auto zip = fbb.CreateString("12345");
+
+    std::vector<int32_t> vec;
+    for (int32_t j = 0; j < 2; j++) {
+      vec.push_back(j);
+    }
+    auto hoursOfOp = fbb.CreateVector(vec);
+
+    std::vector<flatbuffers::Offset<flatbuffers::String>> offVec;
+    for (int32_t j = 0; j < 2; j++) {
+      offVec.push_back(fbb.CreateString("Sales Person"));
+    }
+    auto salesPeople = fbb.CreateVector(offVec);
+
+
+    DealershipBuilder dealershipBuilder(fbb);
+    dealershipBuilder.add_DealershipId(i);
+    dealershipBuilder.add_AddressCity(city);
+    dealershipBuilder.add_AddressLine1(l1);
+    dealershipBuilder.add_AddressLine2(l1);
+    dealershipBuilder.add_AddressZipcode(zip);
+    dealershipBuilder.add_HoursOfOperation(hoursOfOp);
+    dealershipBuilder.add_SalesPeople(salesPeople);
+
+    dealershipVector.push_back(dealershipBuilder.Finish());
+  }
+
+  // Build car
+  auto dvec = fbb.CreateVector(dealershipVector);
+  auto make = fbb.CreateString("BMW");
+  CarBuilder carBuilder(fbb);
+  carBuilder.add_CarId(1);
+  carBuilder.add_CarColor(dynamic_api_samples::Color::Color_BLACK);
+  carBuilder.add_Dealerships(dvec);
+  carBuilder.add_CarEngine(engine);
+  carBuilder.add_Make(make);
+  carBuilder.add_WarrantyLength(100000);
+  carBuilder.add_YearBuilt(2012);
+
+  FinishCarBuffer(fbb, carBuilder.Finish());
+
+  return std::string((char*)fbb.GetBufferPointer(), fbb.GetSize());
+}
+
+void Test_DynamicTableReader_GetFieldDef_Existing(const std::string& flatbuf,
+  flatbuffers::Parser& parser) {
+  flatbuffers::Table* table = const_cast<flatbuffers::Table*>(
+    flatbuffers::GetRoot<flatbuffers::Table>(flatbuf.c_str()));
+  flatbuffers::DynamicTableReader dynamicRootTableReader(table, parser.root_struct_def,
+    &parser.structs_);
+
+  std::vector<std::string> fields = { "CarId", "Make", "Model", "YearBuilt",
+    "WarrantyLength", "Dealerships", "CarColor", "CarEngine",
+    "TankSizeGallons", "OdometerAtTimeOfSale", "RecommendedServiceIntervals" };
+
+  for (auto& item : fields) {
+    auto fieldDef = dynamicRootTableReader.GetFieldDef(item);
+    TEST_NOTNULL(fieldDef);
+    TEST_EQ(fieldDef->name == item, true);
+  }
+}
+
+void Test_DynamicTableReader_GetFieldDef_Missing(const std::string& flatbuf,
+  flatbuffers::Parser& parser) {
+  flatbuffers::Table* table = const_cast<flatbuffers::Table*>(
+    flatbuffers::GetRoot<flatbuffers::Table>(flatbuf.c_str()));
+  flatbuffers::DynamicTableReader dynamicRootTableReader(table, parser.root_struct_def,
+    &parser.structs_);
+
+  std::vector<std::string> fields = { "Field1", "Field2", "Field3" };
+
+  for (auto& item : fields) {
+    auto fieldDef = dynamicRootTableReader.GetFieldDef(item);
+    TEST_EQ(fieldDef == nullptr, true);
+  }
+}
+
+void Test_DynamicTableReader_CompareStaticAndDynamic(const std::string& flatbuf,
+  flatbuffers::Parser& parser) {
+  flatbuffers::Table* table = const_cast<flatbuffers::Table*>(
+    flatbuffers::GetRoot<flatbuffers::Table>(flatbuf.c_str()));
+  flatbuffers::DynamicTableReader dynamicRootTableReader(table, parser.root_struct_def,
+    &parser.structs_);
+
+  auto carExpectedValue = GetCar(flatbuf.c_str());
+
+  auto fieldDef = dynamicRootTableReader.GetFieldDef("CarId");
+  TEST_EQ(dynamicRootTableReader.GetScalarValueAs<uint32_t>(fieldDef) == carExpectedValue->CarId(), true);
+  fieldDef = dynamicRootTableReader.GetFieldDef("Make");
+  TEST_EQ(strcmp(dynamicRootTableReader.GetStringValue(fieldDef), carExpectedValue->Make()->c_str()) == 0, true);
+  fieldDef = dynamicRootTableReader.GetFieldDef("Model");
+  TEST_EQ((dynamicRootTableReader.GetStringValue(fieldDef) == nullptr && carExpectedValue->Model() == nullptr), true);
+  fieldDef = dynamicRootTableReader.GetFieldDef("YearBuilt");
+  TEST_EQ(dynamicRootTableReader.GetScalarValueAs<int32_t>(fieldDef) == carExpectedValue->YearBuilt(), true);
+  fieldDef = dynamicRootTableReader.GetFieldDef("WarrantyLength");
+  TEST_EQ(dynamicRootTableReader.GetScalarValueAs<int32_t>(fieldDef) == carExpectedValue->WarrantyLength(), true);
+
+  // comapre dealerships
+  fieldDef = dynamicRootTableReader.GetFieldDef("Dealerships");
+  TEST_EQ(dynamicRootTableReader.GetVectorLength(fieldDef) == carExpectedValue->Dealerships()->Length(), true);
+  auto length = dynamicRootTableReader.GetVectorLength(fieldDef);
+  flatbuffers::DynamicTableReader dynamicTableReader;
+  for (flatbuffers::uoffset_t i = 0; i < length; i++) {
+    fieldDef = dynamicRootTableReader.GetFieldDef("Dealerships");
+    dynamicRootTableReader.GetVectorTableValue(fieldDef, i, dynamicTableReader);
+    auto dealershipExpectedValue = carExpectedValue->Dealerships()->Get(i);
+    fieldDef = dynamicTableReader.GetFieldDef("DealershipId");
+    TEST_EQ(dynamicTableReader.GetScalarValueAs<uint32_t>(fieldDef) == dealershipExpectedValue->DealershipId(), true);
+    fieldDef = dynamicTableReader.GetFieldDef("DealerName");
+    TEST_EQ((dynamicTableReader.GetStringValue(fieldDef) == nullptr && dealershipExpectedValue->DealerName() == nullptr), true);
+    fieldDef = dynamicTableReader.GetFieldDef("SalesPeople");
+    auto vecLength = dynamicTableReader.GetVectorLength(fieldDef);
+    TEST_EQ(vecLength == dealershipExpectedValue->SalesPeople()->Length(), true);
+    for (flatbuffers::uoffset_t j = 0; j < vecLength; j++) {
+      TEST_EQ(strcmp(dynamicTableReader.GetVectorStringValue(fieldDef, j), dealershipExpectedValue->SalesPeople()->Get(j)->c_str()) == 0, true);
+    }
+    fieldDef = dynamicTableReader.GetFieldDef("HoursOfOperation");
+    vecLength = dynamicTableReader.GetVectorLength(fieldDef);
+    TEST_EQ(vecLength == dealershipExpectedValue->HoursOfOperation()->Length(), true);
+    for (flatbuffers::uoffset_t j = 0; j < vecLength; j++) {
+      TEST_EQ(dynamicTableReader.GetVectorScalarValue<int32_t>(fieldDef, j) == dealershipExpectedValue->HoursOfOperation()->Get(j), true);
+    }
+
+    fieldDef = dynamicTableReader.GetFieldDef("AddressLine1");
+    TEST_EQ(strcmp(dynamicTableReader.GetStringValue(fieldDef), dealershipExpectedValue->AddressLine1()->c_str()) == 0, true);
+    fieldDef = dynamicTableReader.GetFieldDef("AddressLine2");
+    TEST_EQ(strcmp(dynamicTableReader.GetStringValue(fieldDef), dealershipExpectedValue->AddressLine2()->c_str()) == 0, true);
+    fieldDef = dynamicTableReader.GetFieldDef("AddressCity");
+    TEST_EQ(strcmp(dynamicTableReader.GetStringValue(fieldDef), dealershipExpectedValue->AddressCity()->c_str()) == 0, true);
+    fieldDef = dynamicTableReader.GetFieldDef("AddressState");
+    TEST_EQ((dynamicTableReader.GetStringValue(fieldDef) == nullptr && dealershipExpectedValue->AddressState() == nullptr), true);
+    fieldDef = dynamicTableReader.GetFieldDef("AddressZipcode");
+    TEST_EQ(strcmp(dynamicTableReader.GetStringValue(fieldDef), dealershipExpectedValue->AddressZipcode()->c_str()) == 0, true);
+    fieldDef = dynamicTableReader.GetFieldDef("AddressZip4");
+    TEST_EQ((dynamicTableReader.GetStringValue(fieldDef) == nullptr && dealershipExpectedValue->AddressZip4() == nullptr), true);
+    fieldDef = dynamicTableReader.GetFieldDef("DealershipPhone");
+    TEST_EQ((dynamicTableReader.GetStringValue(fieldDef) == nullptr && dealershipExpectedValue->DealershipPhone() == nullptr), true);
+  }
+
+  fieldDef = dynamicRootTableReader.GetFieldDef("CarColor");
+
+  // compare engine
+  fieldDef = dynamicRootTableReader.GetFieldDef("CarEngine");
+  dynamicRootTableReader.GetTableValue(fieldDef, dynamicTableReader);
+  fieldDef = dynamicTableReader.GetFieldDef("EngineId");
+  TEST_EQ(dynamicTableReader.GetScalarValueAs<uint32_t>(fieldDef) == carExpectedValue->CarEngine()->EngineId(), true);
+  fieldDef = dynamicTableReader.GetFieldDef("Manufacturer");
+  TEST_EQ(strcmp(dynamicTableReader.GetStringValue(fieldDef), carExpectedValue->CarEngine()->Manufacturer()->c_str()) == 0, true);
+  fieldDef = dynamicTableReader.GetFieldDef("Size");
+  TEST_EQ(dynamicTableReader.GetScalarValueAs<int32_t>(fieldDef) == carExpectedValue->CarEngine()->Size(), true);
+  fieldDef = dynamicTableReader.GetFieldDef("EngineCylinderOrientationVal");
+  TEST_EQ(dynamicTableReader.GetScalarValueAs<int8_t>(fieldDef) == carExpectedValue->CarEngine()->EngineCylinderOrientationVal(), true);
+  fieldDef = dynamicTableReader.GetFieldDef("EngineCylinderVal");
+  TEST_EQ(dynamicTableReader.GetScalarValueAs<int8_t>(fieldDef) == carExpectedValue->CarEngine()->EngineCylinderVal(), true);
+  fieldDef = dynamicTableReader.GetFieldDef("GasTypeVal");
+  TEST_EQ(dynamicTableReader.GetScalarValueAs<int8_t>(fieldDef) == carExpectedValue->CarEngine()->GasTypeVal(), true);
+  fieldDef = dynamicTableReader.GetFieldDef("IsFourStroke");
+  TEST_EQ(dynamicTableReader.GetScalarValueAs<int8_t>(fieldDef) == carExpectedValue->CarEngine()->IsFourStroke(), true);
+
+  TEST_EQ(dynamicRootTableReader.GetScalarValueAs<int8_t>(fieldDef) == carExpectedValue->CarColor(), true);
+  fieldDef = dynamicRootTableReader.GetFieldDef("TankSizeGallons");
+  TEST_EQ(dynamicRootTableReader.GetScalarValueAs<float>(fieldDef) == carExpectedValue->TankSizeGallons(), true);
+  fieldDef = dynamicRootTableReader.GetFieldDef("OdometerAtTimeOfSale");
+  TEST_EQ(dynamicRootTableReader.GetScalarValueAs<float>(fieldDef) == carExpectedValue->OdometerAtTimeOfSale(), true);
+}
+
+void PrintDynamicTable(flatbuffers::DynamicTableReader& dynamic_table_reader) {
+  using namespace flatbuffers;
+  std::cout << "{" << std::endl;
+  std::cout << "Type: " << dynamic_table_reader.GetStructDef()->name << std::endl;
+  auto fields = dynamic_table_reader.GetFields();
+  for (auto field : fields->vec) {
+    switch (field->value.type.base_type) {
+#define FLATBUFFERS_TD(ENUM, IDLTYPE, CTYPE, JTYPE, GTYPE, NTYPE) \
+        case flatbuffers::BASE_TYPE_ ## ENUM: \
+          if(field->value.type.base_type == flatbuffers::BASE_TYPE_NONE || \
+             field->value.type.base_type == flatbuffers::BASE_TYPE_UTYPE || \
+             field->value.type.base_type == flatbuffers::BASE_TYPE_UCHAR) { \
+               std::cout << field->name << ": " << (uint16_t)dynamic_table_reader.GetScalarValueAs<CTYPE>(field) << std::endl; \
+                    } \
+                    else if(field->value.type.base_type == flatbuffers::BASE_TYPE_CHAR) { \
+             std::cout << field->name << ": " << (int16_t)dynamic_table_reader.GetScalarValueAs<CTYPE>(field) << std::endl; \
+              } \
+                    else if(field->value.type.base_type == flatbuffers::BASE_TYPE_BOOL) { \
+            std::cout << field->name << ": " << ((dynamic_table_reader.GetScalarValueAs<uint8_t>(field) == 0) ? "false" : "true") << std::endl; \
+              } \
+                    else { \
+            std::cout << field->name << ": " << dynamic_table_reader.GetScalarValueAs<CTYPE>(field) << std::endl; \
+              } \
+        break;
+      FLATBUFFERS_GEN_TYPES_SCALAR(FLATBUFFERS_TD);
+#undef FLATBUFFERS_TD
+
+        case flatbuffers::BaseType::BASE_TYPE_STRING: {
+          auto string = dynamic_table_reader.GetStringValue(field);
+          std::cout << field->name << ": " << (string ? dynamic_table_reader.GetStringValue(field) : "null") << std::endl;
+          break;
+        }
+
+        case flatbuffers::BaseType::BASE_TYPE_VECTOR: {
+          auto length = dynamic_table_reader.GetVectorLength(field);
+          std::cout << field->name << ": " << "[" << std::endl;
+          if (length > 0) {
+            for (flatbuffers::uoffset_t i = 0; i < length; i++) {
+              switch (field->value.type.element) {
+#define FLATBUFFERS_TD(ENUM, IDLTYPE, CTYPE, JTYPE, GTYPE, NTYPE) \
+        case flatbuffers::BASE_TYPE_ ## ENUM: \
+          if(field->value.type.base_type == flatbuffers::BASE_TYPE_NONE || \
+             field->value.type.base_type == flatbuffers::BASE_TYPE_UTYPE || \
+             field->value.type.base_type == flatbuffers::BASE_TYPE_UCHAR) { \
+               std::cout << i << ": " << (uint16_t)dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
+                              } \
+                            else if(field->value.type.base_type == flatbuffers::BASE_TYPE_CHAR) { \
+             std::cout << i << ": " << (int16_t)dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
+                                    } \
+                            else if(field->value.type.base_type == flatbuffers::BASE_TYPE_BOOL) { \
+            std::cout << i << ": " << ((dynamic_table_reader.GetVectorScalarValue<uint8_t>(field, i) == 0) ? "false" : "true") << std::endl; \
+                                    } \
+                            else { \
+            std::cout << i << ": " << dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
+                                    } \
+        break;
+                FLATBUFFERS_GEN_TYPES_SCALAR(FLATBUFFERS_TD);
+#undef FLATBUFFERS_TD
+
+        case flatbuffers::BaseType::BASE_TYPE_STRING: {
+          auto string = dynamic_table_reader.GetVectorStringValue(field, i);
+          std::cout << i << ": " << (string ? dynamic_table_reader.GetVectorStringValue(field, i) : "null") << std::endl;
+          break;
+        }
+
+        case flatbuffers::BaseType::BASE_TYPE_STRUCT: {
+          DynamicTableReader table;
+          dynamic_table_reader.GetVectorTableValue(field, i, table);
+          std::cout << i << ": "; // PrintDynamicTable will add the "{" and newline
+          PrintDynamicTable(table);
+          break;
+        }
+              }
+            }
+          }
+          std::cout << "]" << std::endl;
+          break;
+        }
+
+        case flatbuffers::BaseType::BASE_TYPE_STRUCT: {
+          DynamicTableReader table;
+          dynamic_table_reader.GetTableValue(field, table);
+          std::cout << field->name << ": "; // PrintDynamicTable will add the "{" and newline
+          PrintDynamicTable(table);
+          break;
+        }
+    }
+  }
+
+  std::cout << "}" << std::endl;
+}
+
+void Test_PrintMessageDynamically(const std::string& flatbuf,
+  flatbuffers::Parser& parser) {
+  std::cout << "Printing message dynamically." << std::endl;
+  flatbuffers::Table* table = const_cast<flatbuffers::Table*>(
+    flatbuffers::GetRoot<flatbuffers::Table>(flatbuf.c_str()));
+  flatbuffers::DynamicTableReader dynamic_table_reader(table, parser.root_struct_def,
+    &parser.structs_);
+  PrintDynamicTable(dynamic_table_reader);
+
+
+}
+
+void TestDynamicAPI() {
+  auto flatbuf = BuildCarFlatbuffer();
+  flatbuffers::Verifier verifier(
+    reinterpret_cast<const uint8_t *>(flatbuf.c_str()),
+    flatbuf.length());
+  TEST_EQ(VerifyCarBuffer(verifier), true);
+
+  // load FlatBuffer schema (.fbs)
+  std::string schemafile;
+
+  TEST_EQ(flatbuffers::LoadFile(
+    "tests/car.fbs", false, &schemafile), true);
+  // parse schema first, so we can use it to parse the data after
+  flatbuffers::Parser parser;
+  const char *include_directories[] = { "tests", nullptr };
+  TEST_EQ(parser.Parse(schemafile.c_str(), include_directories), true);
+
+  // Run dynamic api unit tests
+  Test_DynamicTableReader_GetFieldDef_Existing(flatbuf, parser);
+  Test_DynamicTableReader_GetFieldDef_Missing(flatbuf, parser);
+  Test_DynamicTableReader_CompareStaticAndDynamic(flatbuf, parser);
+  Test_PrintMessageDynamically(flatbuf, parser);
+}
+
 int main(int /*argc*/, const char * /*argv*/[]) {
   // Run our various test suites:
 
@@ -581,6 +900,8 @@ int main(int /*argc*/, const char * /*argv*/[]) {
   ScientificTest();
   EnumStringsTest();
   UnicodeTest();
+
+  TestDynamicAPI();
 
   if (!testing_fails) {
     TEST_OUTPUT_LINE("ALL TESTS PASSED");
