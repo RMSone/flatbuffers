@@ -607,7 +607,7 @@ std::string BuildCarFlatbuffer() {
     dealershipBuilder.add_DealershipId(i);
     dealershipBuilder.add_AddressCity(city);
     dealershipBuilder.add_AddressLine1(l1);
-    dealershipBuilder.add_AddressLine2(l1);
+    dealershipBuilder.add_AddressLine2(l2);
     dealershipBuilder.add_AddressZipcode(zip);
     dealershipBuilder.add_HoursOfOperation(hoursOfOp);
     dealershipBuilder.add_SalesPeople(salesPeople);
@@ -794,38 +794,42 @@ void PrintDynamicTable(flatbuffers::DynamicTableReader& dynamic_table_reader) {
             for (flatbuffers::uoffset_t i = 0; i < length; i++) {
               switch (field->value.type.element) {
 #define FLATBUFFERS_TD(ENUM, IDLTYPE, CTYPE, JTYPE, GTYPE, NTYPE) \
-        case flatbuffers::BASE_TYPE_ ## ENUM: \
-          if(field->value.type.base_type == flatbuffers::BASE_TYPE_NONE || \
-             field->value.type.base_type == flatbuffers::BASE_TYPE_UTYPE || \
-             field->value.type.base_type == flatbuffers::BASE_TYPE_UCHAR) { \
-               std::cout << i << ": " << (uint16_t)dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
-                              } \
-                            else if(field->value.type.base_type == flatbuffers::BASE_TYPE_CHAR) { \
-             std::cout << i << ": " << (int16_t)dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
-                                    } \
-                            else if(field->value.type.base_type == flatbuffers::BASE_TYPE_BOOL) { \
-            std::cout << i << ": " << ((dynamic_table_reader.GetVectorScalarValue<uint8_t>(field, i) == 0) ? "false" : "true") << std::endl; \
-                                    } \
-                            else { \
-            std::cout << i << ": " << dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
-                                    } \
-        break;
+				case flatbuffers::BASE_TYPE_ ## ENUM: \
+				  if(field->value.type.base_type == flatbuffers::BASE_TYPE_NONE || \
+					 field->value.type.base_type == flatbuffers::BASE_TYPE_UTYPE || \
+					 field->value.type.base_type == flatbuffers::BASE_TYPE_UCHAR) { \
+					   std::cout << i << ": " << (uint16_t)dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
+									  } \
+									else if(field->value.type.base_type == flatbuffers::BASE_TYPE_CHAR) { \
+					 std::cout << i << ": " << (int16_t)dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
+											} \
+									else if(field->value.type.base_type == flatbuffers::BASE_TYPE_BOOL) { \
+					std::cout << i << ": " << ((dynamic_table_reader.GetVectorScalarValue<uint8_t>(field, i) == 0) ? "false" : "true") << std::endl; \
+											} \
+									else { \
+					std::cout << i << ": " << dynamic_table_reader.GetVectorScalarValue<CTYPE>(field, i) << std::endl; \
+											} \
+				break;
                 FLATBUFFERS_GEN_TYPES_SCALAR(FLATBUFFERS_TD);
 #undef FLATBUFFERS_TD
 
-        case flatbuffers::BaseType::BASE_TYPE_STRING: {
-          auto string = dynamic_table_reader.GetVectorStringValue(field, i);
-          std::cout << i << ": " << (string ? dynamic_table_reader.GetVectorStringValue(field, i) : "null") << std::endl;
-          break;
-        }
+				case flatbuffers::BaseType::BASE_TYPE_STRING: {
+				  auto string = dynamic_table_reader.GetVectorStringValue(field, i);
+				  std::cout << i << ": " << (string ? dynamic_table_reader.GetVectorStringValue(field, i) : "null") << std::endl;
+				  break;
+				}
 
-        case flatbuffers::BaseType::BASE_TYPE_STRUCT: {
-          DynamicTableReader table;
-          dynamic_table_reader.GetVectorTableValue(field, i, table);
-          std::cout << i << ": "; // PrintDynamicTable will add the "{" and newline
-          PrintDynamicTable(table);
-          break;
-        }
+				case flatbuffers::BaseType::BASE_TYPE_STRUCT: {
+				  DynamicTableReader table;
+				  dynamic_table_reader.GetVectorTableValue(field, i, table);
+				  std::cout << i << ": "; // PrintDynamicTable will add the "{" and newline
+				  PrintDynamicTable(table);
+				  break;
+				}
+
+				case flatbuffers::BaseType::BASE_TYPE_VECTOR:
+				case flatbuffers::BaseType::BASE_TYPE_UNION:
+			      break;
               }
             }
           }
@@ -840,6 +844,9 @@ void PrintDynamicTable(flatbuffers::DynamicTableReader& dynamic_table_reader) {
           PrintDynamicTable(table);
           break;
         }
+
+        case flatbuffers::BaseType::BASE_TYPE_UNION:
+          break;
     }
   }
 

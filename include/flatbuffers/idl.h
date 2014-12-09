@@ -23,6 +23,7 @@
 #include <functional>
 
 #include "flatbuffers/flatbuffers.h"
+#include "util.h"
 
 // This file defines the data types representing a parsed IDL (Interface
 // Definition Language) / schema file.
